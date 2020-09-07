@@ -1,0 +1,244 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+output: 
+  html_document:
+    keep_md: true
+---
+
+
+## Loading and preprocessing the data
+
+First, librarys are loaded and the data is downloaded, unzipped and read into R.
+
+
+```r
+library(ggplot2)
+library(chron)
+library(dplyr)
+```
+
+```
+## 
+## Attaching package: 'dplyr'
+```
+
+```
+## The following objects are masked from 'package:stats':
+## 
+##     filter, lag
+```
+
+```
+## The following objects are masked from 'package:base':
+## 
+##     intersect, setdiff, setequal, union
+```
+
+```r
+fileUrl<-("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip")
+download.file(fileUrl, destfile = "activity.zip")
+unzip("activity.zip")
+activity<-read.csv("activity.csv")
+```
+
+
+
+## What is mean total number of steps taken per day?
+
+Next, the data is grouped by date and summarized in order to get the mean number of steps per day.  NAs are removed in this step.
+
+
+```r
+daily<-activity%>%
+        na.omit(steps)%>%
+        group_by(date)%>%
+        summarize(dailysteps=sum(steps))
+```
+
+```
+## `summarise()` ungrouping output (override with `.groups` argument)
+```
+
+
+The histogram showing the mean number of steps per day is below.
+
+
+```r
+ggplot(daily, aes(x=dailysteps))+geom_histogram(color="darkblue", fill="lightblue", bins=30)+ggtitle("Total Steps per Day")
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-3-1.png)<!-- -->
+
+
+Next, the mean and median number of steps per day were calculated.  Meansteps represents mean steps.  Mediansteps represents median steps
+
+
+```r
+meansteps<-mean(daily$dailysteps)
+mediansteps<-median(daily$dailysteps)
+print(meansteps)
+```
+
+```
+## [1] 10766.19
+```
+
+```r
+print(mediansteps)
+```
+
+```
+## [1] 10765
+```
+
+
+
+
+## What is the average daily activity pattern?
+
+The next section looks at daily activity patterns by time interval.  The data is grouped by interval and the number of steps is averaged across days for each interval.
+
+
+```r
+intervalactivity<-activity%>%
+        na.omit(steps)%>%
+        group_by(interval)%>%
+        summarize(intervalsteps=mean(steps))
+```
+
+```
+## `summarise()` ungrouping output (override with `.groups` argument)
+```
+
+A time plot was created showing the daily activity patterns.
+
+
+```r
+ggplot(intervalactivity, aes(x=interval, y=intervalsteps))+geom_line(color="darkblue")+ggtitle("Mean Steps per Time Interval")
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-6-1.png)<!-- -->
+
+The question was asked "Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?"
+
+
+```r
+maxinterval<-intervalactivity%>%
+        filter(intervalsteps==max(intervalsteps))
+print(maxinterval)
+```
+
+```
+## # A tibble: 1 x 2
+##   interval intervalsteps
+##      <int>         <dbl>
+## 1      835          206.
+```
+
+
+
+
+## Imputing missing values
+
+The next section deals with imputing missing values and the results of these changes.
+
+First, the number of missing values was calculated.
+
+
+```r
+NArows<-sum (is.na(activity$steps))
+print (NArows)
+```
+
+```
+## [1] 2304
+```
+
+I chose to impute missing values by using the mean steps for that interval across all days. I chose that method because of the wide variation of steps in each interval.  This should provide a fairly accurate estimate for the missing data.
+
+
+```r
+#seperate activity table into two tables based on NA vs no NA, update NA rows 
+#with mean for time interval and merge rows back together
+activitynona<-filter(activity,!is.na(steps))
+activityna<-filter(activity, is.na(steps))
+activityna<-merge(activityna, intervalactivity, by="interval")
+activityna<-subset(activityna, select=c("interval", "date", "intervalsteps"))
+activityna<-rename(activityna, steps=intervalsteps)
+fullactivity<-rbind(activitynona, activityna)
+```
+
+Next, I grouped the data by by date and calculated the total steps per day.
+
+
+```r
+fulldaily<-fullactivity%>%
+        group_by(date)%>%
+        summarize(dailysteps=sum(steps))
+```
+
+```
+## `summarise()` ungrouping output (override with `.groups` argument)
+```
+
+A histogram was created showing the steps by data including the imputed data.
+
+
+```r
+ggplot(fulldaily, aes(x=dailysteps))+geom_histogram(color="darkblue", fill="lightblue", bins=30)+ggtitle("Mean Steps Per Day Including Imputed Data")
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-11-1.png)<!-- -->
+
+The new mean and median are below.  Meanfullsteps represents the mean number of steps.  Medianfullsteps represents the median number of steps.
+
+
+```r
+meanfullsteps<-mean(fulldaily$dailysteps)
+medianfullsteps<-median(fulldaily$dailysteps)
+print (meanfullsteps)
+```
+
+```
+## [1] 10766.19
+```
+
+```r
+print (medianfullsteps)
+```
+
+```
+## [1] 10766.19
+```
+
+In comparison to the mean and median of the data without imputed values, the mean reains the same and the median with imputed values moves to the mean - a difference of 1 step from the data with NAs removed.  However, the mode changes due to the number of days that had no data and were imputed with identical values.  This is noted on the histogram.  The other columns keep roughly the same relationship to each other as in the histogram with NA rows removed.
+
+
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+In the last section a new column was added denoting whether the date is a weekday or weekend to see if the pattern differs.
+
+The date was changed from a character field to a POSIXct field and column was added for the weekday/weekend factor.  Data was then grouped by interval and weekday/weekend and total steps were calculated.  
+
+
+
+```r
+fullactivity$date<-as.POSIXct(fullactivity$date)
+fullactivity$daytype <- ifelse(weekdays(fullactivity$date) %in% c("Saturday", "Sunday"), "weekend", "weekday")
+summaryfullactivity<-fullactivity%>%
+        group_by(interval,daytype)%>%
+        summarize(dailysteps=mean(steps))
+```
+
+```
+## `summarise()` regrouping output by 'interval' (override with `.groups` argument)
+```
+A panel plot was created showing the mean number of steps taken in each time interval grouped by weekend and weekday.
+
+
+```r
+ggplot(summaryfullactivity, aes(x=interval, y=dailysteps))+geom_line(color="darkblue")+facet_grid(daytype~.)+ggtitle("Mean Daily Steps per Interval by Weekday/Weekend")
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-14-1.png)<!-- -->
